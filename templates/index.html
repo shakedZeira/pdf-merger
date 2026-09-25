@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF Merger</title>
+<style>
+  :root { --accent: #3b82f6; --border: #e5e7eb; --text: #111827; --muted: #6b7280; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text); background: #f9fafb; }
+  .wrap { max-width: 640px; margin: 48px auto; padding: 0 16px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .drop { border: 2px dashed var(--border); border-radius: 10px; padding: 28px; text-align: center; color: var(--muted); cursor: pointer; transition: .15s; }
+  .drop:hover, .drop.over { border-color: var(--accent); color: var(--accent); }
+  #file { display: none; }
+  #list { list-style: none; margin: 16px 0 0; padding: 0; }
+  #list li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; background: #fff; }
+  #list .idx { color: var(--muted); font-size: 12px; width: 18px; text-align: right; flex: none; }
+  #list .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+  #list .size { color: var(--muted); font-size: 12px; flex: none; }
+  #list button { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 15px; padding: 2px 4px; line-height: 1; }
+  #list button:hover { color: var(--text); }
+  #list button.danger:hover { color: #dc2626; }
+  #merge { margin-top: 16px; width: 100%; padding: 12px; border: none; border-radius: 8px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+  #merge:hover { filter: brightness(.95); }
+  #merge:disabled { background: #9ca3af; cursor: not-allowed; }
+  #status { margin-top: 12px; font-size: 14px; color: var(--muted); min-height: 18px; text-align: center; }
+  #status.error { color: #dc2626; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PDF Merger</h1>
+  <p class="sub">Combine any number of PDF files into one. Order is top to bottom.</p>
+  <div class="card">
+    <div class="drop" id="drop">
+      <strong>Click or drop PDF files here</strong><br>No limit on the number of files.
+    </div>
+    <input type="file" id="file" accept="application/pdf,.pdf" multiple>
+    <ul id="list"></ul>
+    <button id="merge" disabled>Merge PDFs</button>
+    <div id="status"></div>
+  </div>
+</div>
+<script>
+  let files = [];
+  const input = document.getElementById('file');
+  const drop = document.getElementById('drop');
+  const list = document.getElementById('list');
+  const btn = document.getElementById('merge');
+  const status = document.getElementById('status');
+
+  function fmt(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 ** 2) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 ** 3) return (bytes / 1024 ** 2).toFixed(1) + ' MB';
+    return (bytes / 1024 ** 3).toFixed(2) + ' GB';
+  }
+
+  function add(file) {
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      status.textContent = 'Skipped non-PDF file: ' + file.name;
+      return;
+    }
+    if (!files.some(f => f.name === file.name && f.size === file.size)) files.push(file);
+  }
+
+  function render() {
+    list.innerHTML = '';
+    files.forEach((f, i) => {
+      const li = document.createElement('li');
+      const idx = document.createElement('span'); idx.className = 'idx'; idx.textContent = i + 1;
+      const name = document.createElement('span'); name.className = 'name'; name.title = f.name; name.textContent = f.name;
+      const size = document.createElement('span'); size.className = 'size'; size.textContent = fmt(f.size);
+      const up = document.createElement('button'); up.textContent = '↑'; up.title = 'Move up';
+      const down = document.createElement('button'); down.textContent = '↓'; down.title = 'Move down';
+      const del = document.createElement('button'); del.className = 'danger'; del.textContent = '✕'; del.title = 'Remove';
+      if (i > 0) up.onclick = () => { [files[i - 1], files[i]] = [files[i], files[i - 1]]; render(); };
+      if (i < files.length - 1) down.onclick = () => { [files[i + 1], files[i]] = [files[i], files[i + 1]]; render(); };
+      del.onclick = () => { files.splice(i, 1); render(); };
+      li.append(idx, name, size);
+      if (i > 0) li.append(up);
+      if (i < files.length - 1) li.append(down);
+      li.append(del);
+      list.appendChild(li);
+    });
+    btn.disabled = files.length === 0;
+  }
+
+  input.addEventListener('change', () => { Array.from(input.files).forEach(add); input.value = ''; render(); });
+  drop.addEventListener('click', () => input.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('over');
+    Array.from(e.dataTransfer.files).forEach(add);
+    render();
+  });
+
+  btn.addEventListener('click', async () => {
+    status.className = '';
+    status.textContent = 'Merging ' + files.length + ' file(s)…';
+    btn.disabled = true;
+    const data = new FormData();
+    files.forEach(f => data.append('pdfs', f));
+    try {
+      const res = await fetch('/merge', { method: 'POST', body: data });
+      if (!res.ok) throw new Error((await res.text()) || 'Server error');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'merged.pdf';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      status.textContent = 'Done — merged.pdf downloaded';
+    } catch (err) {
+      status.className = 'error';
+      status.textContent = err.message;
+    } finally {
+      render();
+    }
+  });
+</script>
+</body>
+</html>
